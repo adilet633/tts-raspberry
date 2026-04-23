@@ -358,6 +358,7 @@ def switch_language(new_lang: str, cfg: dict, vosk_models: dict, stt: VoskSTT,
 
 
 def main():
+    print("Start!")
     cfg = load_config("config.json")
 
     vosk_models = cfg.get("vosk_models", {}) or {}
