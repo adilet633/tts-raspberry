@@ -1,0 +1,9 @@
+vosk==0.3.44
+sounddevice==0.4.6
+pyttsx3==2.90
+requests==2.32.4
+pyperclip==1.8.2
+edge-tts==6.1.12
+numpy>=1.21.0
+torch>=2.0.0
+torchaudio>=2.0.0
