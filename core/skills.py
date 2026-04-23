@@ -74,6 +74,7 @@ class Skills:
         reminders: ReminderManager,
         notes_file: str,
         sos_cfg: dict,
+        lang: str,
     ):
         self.tts = tts
         self.reminders = reminders
@@ -81,12 +82,19 @@ class Skills:
 
         self.sos_cfg = sos_cfg or {}
         self.tg = None
+        self.lang = lang
 
         if self.sos_cfg.get("telegram_enabled"):
             token = self.sos_cfg.get("telegram_bot_token", "")
             chat_id = self.sos_cfg.get("telegram_chat_id", "")
             if token and chat_id:
                 self.tg = TelegramSOS(token, chat_id)
+
+    def _say_by_lang(self, ru_text: str, kz_text: str) -> None:
+        if self.lang == "kz":
+            self.tts.say(kz_text)
+        else:
+            self.tts.say(ru_text)
 
     def do_time(self) -> None:
         # Safer than "HH:MM" for Silero
@@ -105,6 +113,13 @@ class Skills:
     def do_reminder(self, minutes: int, text: str) -> None:
         self.reminders.add_in_minutes(minutes, text)
 
+        text = (text or "").strip()
+
+        if text:
+            self.tts.say(f"Хорошо, напомню {text} через {minutes} минут.")
+        else:
+            self.tts.say(f"Хорошо, напомню через {minutes} минут.")
+
     def do_read_clipboard(self) -> None:
         try:
             text = pyperclip.paste() or ""
@@ -119,29 +134,116 @@ class Skills:
 
     def do_note(self, text: str) -> None:
         text = (text or "").strip()
+
         if not text:
-            self.tts.say("Не понял текст заметки.")
+            self._say_by_lang(
+                "Не понял, что нужно запомнить.",
+                "Нені есте сақтау керек екенін түсінбедім."
+            )
             return
 
         try:
             with open(self.notes_file, "a", encoding="utf-8") as f:
                 f.write(text + "\n")
-            self.tts.say("Записал заметку.")
+
+            if self.lang == "kz":
+                self.tts.say(f"Жақсы, мен мынаны есте сақтадым: {text}.")
+            else:
+                self.tts.say(f"Хорошо, я запомнил: {text}.")
         except Exception as e:
             print("[Note error]", e)
-            self.tts.say("Не удалось записать заметку.")
+            self._say_by_lang(
+                "Не удалось сохранить заметку.",
+                "Жазбаны сақтау мүмкін болмады."
+            )
+
+    def do_contact_relative(self) -> None:
+        self._say_by_lang(
+            "Связываюсь с родственниками.",
+            "Туыстарыңызбен байланысып жатырмын."
+        )
+
+        if self.tg:
+            msg = self.sos_cfg.get("relative_message") or "Пользователь просит связаться с родственниками."
+            ok = self.tg.send(msg)
+
+            if ok:
+                self._say_by_lang(
+                    "Сообщение родственникам отправлено.",
+                    "Туыстарыңызға хабарлама жіберілді."
+                )
+            else:
+                self._say_by_lang(
+                    "Не удалось отправить сообщение родственникам.",
+                    "Туыстарыңызға хабарлама жіберу мүмкін болмады."
+                )
+        else:
+            self._say_by_lang(
+                "Связь с родственниками не настроена.",
+                "Туыстармен байланыс бапталмаған."
+            )
+
+    def do_memory_read(self) -> None:
+        try:
+            if not os.path.exists(self.notes_file):
+                self._say_by_lang(
+                    "Заметок пока нет.",
+                    "Әзірге жазбалар жоқ."
+                )
+                return
+
+            with open(self.notes_file, "r", encoding="utf-8") as f:
+                lines = [line.strip() for line in f.readlines() if line.strip()]
+
+            if not lines:
+                self._say_by_lang(
+                    "Заметок пока нет.",
+                    "Әзірге жазбалар жоқ."
+                )
+                return
+
+            last_notes = lines[-3:]
+            text = ". ".join(last_notes)
+
+            if self.lang == "kz":
+                self.tts.say(f"Соңғы жазбалар: {text}.")
+            else:
+                self.tts.say(f"Последние заметки: {text}.")
+        except Exception as e:
+            print("[Memory read error]", e)
+            self._say_by_lang(
+                "Не удалось прочитать заметки.",
+                "Жазбаларды оқу мүмкін болмады."
+            )
 
     def do_sos(self) -> None:
-        # local alarm speech
+        self._say_by_lang(
+            "Экстренный режим активирован.",
+            "Төтенше режим іске қосылды."
+        )
+
         if self.sos_cfg.get("local_alarm", True):
-            alarm_text = self.sos_cfg.get("speak_alarm_text") or "Нужна помощь! SOS активирован!"
+            alarm_text = self.sos_cfg.get("speak_alarm_text")
+            if not alarm_text:
+                alarm_text = "Көмек керек! SOS іске қосылды!" if self.lang == "kz" else "Нужна помощь! SOS активирован!"
             self.tts.say(alarm_text)
 
-        # telegram
         if self.tg:
             msg = self.sos_cfg.get("telegram_message") or "SOS! Нужна помощь."
             ok = self.tg.send(msg)
+
             if ok:
-                self.tts.say("Сообщение отправлено.")
+                self._say_by_lang(
+                    "Сообщение о помощи отправлено.",
+                    "Көмек туралы хабарлама жіберілді."
+                )
             else:
-                self.tts.say("Не удалось отправить сообщение.")
+                self._say_by_lang(
+                    "Не удалось отправить сообщение о помощи.",
+                    "Көмек туралы хабарламаны жіберу мүмкін болмады."
+                )
+        else:
+            self._say_by_lang(
+                "Отправка сообщения не настроена.",
+                "Хабарлама жіберу бапталмаған."
+            )

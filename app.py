@@ -12,6 +12,7 @@ from core.tts_espeak import EspeakTTS
 from core.tts_pyttsx3 import Pyttsx3TTS
 
 from core.tts_silero import SileroRuTTS, SileroKzTTS
+from core.tts_piper import PiperTTS
 
 from core.llm_router_ollama import OllamaRouter
 
@@ -39,6 +40,16 @@ def build_tts(cfg: dict, lang: str):
         engine_ru = (cfg.get("tts_engine_ru") or "silero").lower()
         engine_kz = (cfg.get("tts_engine_kz") or "silero").lower()
         engine = engine_kz if lang == "kz" else engine_ru
+
+    if engine == "piper":
+        piper_cfg = cfg.get("tts_piper", {}) or {}
+
+        if lang == "kz":
+            model_path = piper_cfg.get("kz_model", "models/piper/ru_RU-ruslan-medium.onnx")
+        else:
+            model_path = piper_cfg.get("ru_model", "models/piper/ru_RU-ruslan-medium.onnx")
+
+        return PiperTTS(model_path=model_path)
 
     if engine == "silero":
         sil = cfg.get("tts_silero", {}) or {}
@@ -330,6 +341,7 @@ def switch_language(new_lang: str, cfg: dict, vosk_models: dict, stt: VoskSTT,
         tts = build_tts(cfg, new_lang)
         reminders.tts = tts
         skills.tts = tts
+        skills.lang = new_lang
     except Exception as e:
         print("ERROR rebuilding TTS:", e)
 
@@ -361,11 +373,13 @@ def main():
     )
 
     reminders = ReminderManager(tts)
+    reminders.start()
     skills = Skills(
         tts=tts,
         reminders=reminders,
         notes_file=cfg.get("notes_file", "notes.txt"),
         sos_cfg=cfg.get("sos", {}),
+        lang=lang,
     )
 
     llm = OllamaRouter(cfg.get("llm", {}))
@@ -377,7 +391,7 @@ def main():
     listen_seconds = int(cfg.get("listen_seconds", 6))
 
     while True:
-        reminders.tick()
+
         input("\nEnter -> говорить... ")
 
         skills.tts.say(get_prompt(cfg, lang, "listening", "Слушаю.", "Тыңдап тұрмын."))
@@ -401,12 +415,9 @@ def main():
             skills.do_date()
             continue
 
-        # parse intent
-        try:
-            intent, payload = parse_intent(text, lang=lang)
-        except TypeError:
-            # if old intents.py in project
-            intent, payload = parse_intent(text)
+        intent, payload = parse_intent(text, lang="ru")
+        if intent == Intent.UNKNOWN:
+            intent, payload = parse_intent(text, lang="kz")
 
         # --- rule-based commands only ---
         if intent == Intent.EXIT:
@@ -437,6 +448,14 @@ def main():
 
         if intent == Intent.NOTE:
             skills.do_note(payload.get("text", ""))
+            continue
+
+        if intent == Intent.MEMORY_READ:
+            skills.do_memory_read()
+            continue
+
+        if intent == Intent.CONTACT_RELATIVE:
+            skills.do_contact_relative()
             continue
 
         if intent == Intent.SOS:
@@ -480,7 +499,7 @@ def main():
         skills.tts.say(get_prompt(cfg, lang, "unknown",
                                   "Не понял. Скажите: помощь.",
                                   "Түсінбедім. Айтыңыз: көмек."))
-
+    reminders.stop()
 
 if __name__ == "__main__":
     main()

@@ -17,6 +17,8 @@ class Intent(str, Enum):
     EXIT = "exit"
     CHAT = "chat"
     UNKNOWN = "unknown"
+    MEMORY_READ = "memory_read"
+    CONTACT_RELATIVE = "contact_relative"
 
 
 def _clean(text: str) -> str:
@@ -203,22 +205,102 @@ RU = {
     "help": ["помощь", "справка", "что ты умеешь", "команды", "помоги", "что умеешь"],
     "time": ["время", "который час", "сколько времени", "какое сейчас время", "time", "what time"],
     "date": ["дата", "какое сегодня число", "какой сегодня день", "какая сегодня дата", "date", "today date"],
+    "memory_read": [
+        "прочитай мои заметки",
+        "прочитай заметки",
+        "что я записал",
+        "покажи мои заметки",
+        "какие у меня заметки"
+    ],
     "exit": ["выход", "выйти", "закрыть", "завершить", "стоп", "пока", "до свидания"],
-    "sos": ["сос", "sos", "нужна помощь", "тревога", "alarm", "экстренно"],
+    "sos": [
+        "сос",
+        "sos",
+        "нужна помощь",
+        "помоги мне",
+        "мне плохо",
+        "мне нужна помощь",
+        "вызови помощь",
+        "позови на помощь",
+        "экстренная помощь",
+        "тревога",
+        "alarm",
+        "экстренно"
+    ],
     "read_clipboard": ["прочитай буфер", "буфер обмена", "прочитай текст", "clipboard"],
-    "note": ["заметка", "запиши", "запиши заметку", "добавь заметку", "сделай заметку", "note"],
+    "contact_relative": [
+        "свяжись с родственником",
+        "свяжись с близкими",
+        "позови родственника",
+        "позови близких",
+        "отправь сообщение родственнику",
+        "отправь сообщение семье",
+        "сообщи родственникам",
+        "сообщи семье",
+        "свяжись с семьей",
+        "позвони родственнику"
+    ],
+    "note": [
+        "заметка",
+        "запиши",
+        "запиши заметку",
+        "добавь заметку",
+        "сделай заметку",
+        "запомни",
+        "запомни что",
+        "сохрани",
+        "сохрани заметку",
+        "запиши что",
+        "note"
+    ],
     "switch_kz": ["переключи на казахский", "на казахский", "казахский язык", "қазақша", "kz", "kazakh"],
     "switch_ru": ["переключи на русский", "на русский", "русский язык", "орысша", "ru", "russian"],
 }
 
 KZ = {
-    "help": ["көмек", "анықтама", "не істей аласың", "командалар"],
+    "help": ["анықтама", "не істей аласың", "командалар"],
     "time": ["сағат", "сағат қанша", "уақыт", "time"],
+    "memory_read": [
+        "жазбаларымды оқы",
+        "жазбаларды оқы",
+        "не жазып қойдым",
+        "менің жазбаларымды айт",
+        "қандай жазбаларым бар"
+    ],
     "date": ["күн", "бүгін қай күн", "дата", "date"],
+    "contact_relative": [
+        "туысқаныма хабарлас",
+        "жақындарыма хабарлас",
+        "отбасыма хабар бер",
+        "туыстарыма хабар бер",
+        "отбасыма хабарла",
+        "жақындарыма хабарла",
+        "туысқаныма хабар жібер"
+    ],
     "exit": ["шығу", "тоқта", "жабу", "аяқта", "сөндір", "өшір"],
-    "sos": ["сос", "sos", "көмек керек", "дабыл", "жедел көмек"],
+    "sos": [
+        "сос",
+        "sos",
+        "көмек керек",
+        "маған көмек керек",
+        "маған жаман болып тұр",
+        "жедел көмек шақыр",
+        "көмек шақыр",
+        "дабыл",
+        "жедел көмек"
+    ],
     "read_clipboard": ["буферді оқы", "алмасу буфері", "мәтінді оқы", "clipboard"],
-    "note": ["жазып қой", "жазба", "ескертпе", "жазып ал", "note"],
+    "note": [
+        "жазып қой",
+        "жазба",
+        "ескертпе",
+        "жазып ал",
+        "есте сақта",
+        "сақтап қой",
+        "жазып қойшы",
+        "мынаны жазып қой",
+        "note"
+    ],
     "switch_kz": ["қазақшаға ауыс", "қазақ тіліне ауыс", "қазақша", "kz"],
     "switch_ru": ["орысшаға ауыс", "орыс тіліне ауыс", "орысша", "ru", "русский"],
 }
@@ -233,6 +315,10 @@ def _extract_reminder_text(raw_tail: str) -> str:
     s = re.sub(r"^(?:что\s+|чтобы\s+|мне\s+|пожалуйста\s+|пж\s+)", "", s).strip()
     return s or ""
 
+def _remove_reminder_words(s: str) -> str:
+    s = _clean(s)
+    s = re.sub(rf"\b{_RU_REMIND_VERB}\b", "", s)
+    return _strip_punct(s).strip()
 
 def _normalize_unit_ru(u: str) -> str:
     u = _clean(u)
@@ -244,73 +330,62 @@ def _normalize_unit_ru(u: str) -> str:
 
 
 def _parse_reminder_ru(t: str) -> Tuple[bool, Dict[str, Any]]:
-    """
-    Now supports numbers as words:
-      "через пять минут ..."
-      "напомним через минуту ..."
-      "через полчаса ..."
-    """
     s = _clean(t)
 
-    # through minute/hour shortcuts
-    m = re.search(rf"\b{_RU_AFTER_WORD}\s+минут\w*\b(.*)$", s)
+    # "напомни принять лекарство через минуту"
+    m = re.search(rf"(?P<prefix>.*?)\b{_RU_AFTER_WORD}\s+минут\w*\b(?P<suffix>.*)$", s)
     if m:
-        tail = _extract_reminder_text(m.group(1))
+        prefix = _remove_reminder_words(m.group("prefix"))
+        suffix = _extract_reminder_text(m.group("suffix"))
+        tail = (prefix + " " + suffix).strip()
         return True, {"minutes": 1, "text": tail or "напоминание"}
 
-    m = re.search(rf"\b{_RU_AFTER_WORD}\s+полчаса\b(.*)$", s)
+    # "напомни попить воду через полчаса"
+    m = re.search(rf"(?P<prefix>.*?)\b{_RU_AFTER_WORD}\s+полчаса\b(?P<suffix>.*)$", s)
     if m:
-        tail = _extract_reminder_text(m.group(1))
+        prefix = _remove_reminder_words(m.group("prefix"))
+        suffix = _extract_reminder_text(m.group("suffix"))
+        tail = (prefix + " " + suffix).strip()
         return True, {"minutes": 30, "text": tail or "напоминание"}
 
-    m = re.search(rf"\b{_RU_AFTER_WORD}\s+час\b(.*)$", s)
+    # "напомни лечь спать через час"
+    m = re.search(rf"(?P<prefix>.*?)\b{_RU_AFTER_WORD}\s+час\b(?P<suffix>.*)$", s)
     if m:
-        tail = _extract_reminder_text(m.group(1))
+        prefix = _remove_reminder_words(m.group("prefix"))
+        suffix = _extract_reminder_text(m.group("suffix"))
+        tail = (prefix + " " + suffix).strip()
         return True, {"minutes": 60, "text": tail or "напоминание"}
 
-    # Generic patterns: (verb)? after ... <num> <unit> ...
-    # We'll locate "через/после/..." then parse number (digits or words) then unit.
-    m = re.search(rf"(?:\b{_RU_REMIND_VERB}\b\s*)?\b{_RU_AFTER_WORD}\b\s+(?P<rest>.+)$", s)
+    # Общий случай:
+    # "напомни принять лекарство через 5 минут"
+    # "напомни попить воду через 20 минут"
+    # "напомни поесть через 2 часа"
+    m = re.search(rf"(?P<prefix>.*?)\b{_RU_AFTER_WORD}\b\s+(?P<rest>.+)$", s)
     if m:
+        prefix = _remove_reminder_words(m.group("prefix"))
         rest = m.group("rest")
+
         num, after_num_rest = _find_number_ru(rest)
         if num is None:
-            # if they said "через минуту" without number handled above; otherwise fail
             return False, {}
 
-        # find unit right after number (or near it)
-        # We search in the remainder starting from where number phrase ended.
-        unit_m = re.search(r"\b(секунд\w*|сек\w*|с\b|минут\w*|мин\b|м\b|час\w*|дн\w*|день|дня|дней)\b", after_num_rest)
+        unit_m = re.search(
+            r"\b(секунд\w*|сек\w*|с\b|минут\w*|мин\b|м\b|час\w*|дн\w*|день|дня|дней)\b",
+            after_num_rest
+        )
         if not unit_m:
             return False, {}
 
         unit = _normalize_unit_ru(unit_m.group(1))
-        tail = after_num_rest[unit_m.end():]
-        tail = _extract_reminder_text(tail)
+        suffix = after_num_rest[unit_m.end():]
+        suffix = _extract_reminder_text(suffix)
 
+        tail = (prefix + " " + suffix).strip()
         minutes = _minutes_from_amount_unit(float(num), unit)
-        return True, {"minutes": minutes, "text": tail or "напоминание"}
 
-    # Another order: "через ... (verb) ..."
-    m = re.search(rf"\b{_RU_AFTER_WORD}\b\s+(?P<rest>.+)$", s)
-    if m:
-        rest = m.group("rest")
-        num, after_num_rest = _find_number_ru(rest)
-        if num is None:
-            return False, {}
-        unit_m = re.search(r"\b(секунд\w*|сек\w*|с\b|минут\w*|мин\b|м\b|час\w*|дн\w*|день|дня|дней)\b", after_num_rest)
-        if not unit_m:
-            return False, {}
-        unit = _normalize_unit_ru(unit_m.group(1))
-        tail = after_num_rest[unit_m.end():]
-        # remove possible verb after time: "напомни ..."
-        tail = re.sub(rf"^\s*\b{_RU_REMIND_VERB}\b", "", tail).strip()
-        tail = _extract_reminder_text(tail)
-        minutes = _minutes_from_amount_unit(float(num), unit)
         return True, {"minutes": minutes, "text": tail or "напоминание"}
 
     return False, {}
-
 
 def _parse_reminder_kz(t: str) -> Tuple[bool, Dict[str, Any]]:
     s = _clean(t)
@@ -369,5 +444,9 @@ def parse_intent(text: str, lang: str = "ru") -> Tuple[Intent, Dict[str, Any]]:
                 note_text = _strip_punct(t.split(trig2, 1)[-1])
                 return Intent.NOTE, {"text": note_text}
         return Intent.NOTE, {"text": ""}
-
+    if _best_match(t, D["memory_read"]) >= TH:
+        return Intent.MEMORY_READ, {}
+    if _best_match(t, D["contact_relative"]) >= TH:
+        return Intent.CONTACT_RELATIVE, {}
     return Intent.UNKNOWN, {}
+

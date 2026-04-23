@@ -9,5 +9,10 @@ class TelegramSOS:
     def send(self, text: str) -> bool:
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
         payload = {"chat_id": self.chat_id, "text": text}
-        r = requests.post(url, json=payload, timeout=10)
-        return r.status_code == 200
+
+        try:
+            r = requests.post(url, json=payload, timeout=10)
+            return r.status_code == 200
+        except Exception as e:
+            print("[TelegramSOS error]", e)
+            return False
